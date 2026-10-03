@@ -1,0 +1,29 @@
+# Environments & Secrets
+.env
+.env.*
+!.env.example
+
+# Local Architecture Memory Files (Must never be committed)
+MEMORY.md
+
+# Operating System & IDE Files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+.serena/
+
+# Build, Log & Dependency Artifacts
+node_modules/
+bin/
+obj/
+dist/
+
+# Archive
+.archive/
+
+# Browser verification artifacts
+.playwright-cli/
+output/

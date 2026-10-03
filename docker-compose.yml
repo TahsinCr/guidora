@@ -1,0 +1,146 @@
+name: guidora
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: dockerfile
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    volumes:
+      - type: bind
+        source: ./frontend/public/config.json
+        target: /usr/share/nginx/html/config.json
+        read_only: true
+        bind:
+          create_host_path: false
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - guidora-net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: dockerfile
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      ConnectionStrings__Guidora: Host=postgres;Port=5432;Database=${POSTGRES_DB:-guidora};Username=${POSTGRES_USER:-guidora};Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      Redis__Configuration: redis:6379,password=${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
+      Database__ApplyMigrationsOnStartup: ${DATABASE_APPLY_MIGRATIONS_ON_STARTUP:-true}
+      Authorization__SyncOperationClaimsOnStartup: ${AUTHORIZATION_SYNC_OPERATION_CLAIMS_ON_STARTUP:-true}
+      TokenOptions__SecurityKey: ${TOKEN_OPTIONS__SECURITYKEY:?TOKEN_OPTIONS__SECURITYKEY must be set in .env}
+      TokenOptions__Issuer: ${TOKEN_OPTIONS__ISSUER:-Guidora}
+      TokenOptions__Audience: ${TOKEN_OPTIONS__AUDIENCE:-Guidora}
+      TokenOptions__AccessTokenExpirationMinutes: ${TOKEN_OPTIONS__ACCESS_TOKEN_EXPIRATION_MINUTES:-15}
+      TokenOptions__RefreshTokenExpirationDays: ${TOKEN_OPTIONS__REFRESH_TOKEN_EXPIRATION_DAYS:-30}
+      TokenOptions__RememberMeExpirationDays: ${TOKEN_OPTIONS__REMEMBER_ME_EXPIRATION_DAYS:-90}
+      TokenOptions__SessionAbsoluteExpirationDays: ${TOKEN_OPTIONS__SESSION_ABSOLUTE_EXPIRATION_DAYS:-180}
+      TokenOptions__ClockSkewSeconds: ${TOKEN_OPTIONS__CLOCK_SKEW_SECONDS:-30}
+      CommunityVerification__SignalHashKey: ${COMMUNITY_VERIFICATION_SIGNAL_HASH_KEY:?COMMUNITY_VERIFICATION_SIGNAL_HASH_KEY must be set in .env}
+      BootstrapAdmin__Enabled: ${BOOTSTRAP_ADMIN_ENABLED:-false}
+      BootstrapAdmin__Username: ${BOOTSTRAP_ADMIN_USERNAME:-}
+      BootstrapAdmin__Email: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BootstrapAdmin__Password: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      EmailVerification__Enabled: ${EMAIL_VERIFICATION_ENABLED:-false}
+      EmailVerification__Smtp__Host: ${EMAIL_SMTP_HOST:-}
+      EmailVerification__Smtp__Port: ${EMAIL_SMTP_PORT:-587}
+      EmailVerification__Smtp__From: ${EMAIL_SMTP_FROM:-}
+      EmailVerification__Smtp__Username: ${EMAIL_SMTP_USERNAME:-}
+      EmailVerification__Smtp__Password: ${EMAIL_SMTP_PASSWORD:-}
+      Cors__AllowedOrigins__0: ${WEB_CLIENT_ORIGIN:-http://localhost}
+      ForwardedHeaders__KnownProxies__0: ${FORWARDED_HEADERS_KNOWN_PROXIES_0:-}
+      Logging__LogLevel__Default: ${LOG_LEVEL_DEFAULT:-Information}
+      Logging__LogLevel__Microsoft.AspNetCore: ${LOG_LEVEL_ASPNETCORE:-Warning}
+      AllowedHosts: ${ALLOWED_HOSTS:-*}
+    ports:
+      - "${INFRA_BIND_ADDRESS:-127.0.0.1}:${BACKEND_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:8080/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - guidora-net
+
+  postgres:
+    image: postgres:18.6-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-guidora}
+      POSTGRES_USER: ${POSTGRES_USER:-guidora}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    ports:
+      - "${INFRA_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - guidora-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - guidora-net
+
+  redis:
+    image: redis:8.10.1-alpine3.23
+    restart: unless-stopped
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}", "--maxmemory", "${REDIS_MAXMEMORY:-256mb}", "--maxmemory-policy", "volatile-lfu"]
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
+    mem_limit: ${REDIS_CONTAINER_MEMORY_LIMIT:-320m}
+    ports:
+      - "${INFRA_BIND_ADDRESS:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - type: bind
+        source: ./backend/infra/redis/redis.conf
+        target: /usr/local/etc/redis/redis.conf
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - guidora-net
+
+  rabbitmq:
+    profiles: ["messaging"]
+    image: rabbitmq:4.3.6-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guidora}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD must be set in .env}
+    ports:
+      - "${INFRA_BIND_ADDRESS:-127.0.0.1}:${RABBITMQ_PORT:-5672}:5672"
+      - "${INFRA_BIND_ADDRESS:-127.0.0.1}:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - guidora-rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - guidora-net
+
+volumes:
+  guidora-postgres-data:
+  guidora-rabbitmq-data:
+
+networks:
+  guidora-net:
+    driver: bridge
