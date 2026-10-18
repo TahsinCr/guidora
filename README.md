@@ -1,153 +1,147 @@
-# Guidora — Enterprise Developer Tools & Governance Platform
+# Guidora
 
-[![Docker Compose](https://img.shields.io/badge/Docker_Compose-v2.20+-2496ED?style=for-the-badge&logo=docker&logoColor=white)](docker-compose.yml)
-[![.NET 10](https://img.shields.io/badge/.NET_10-WebAPI_Onion_Arch-512BD4?style=for-the-badge&logo=dotnet&logoColor=white)](backend/)
-[![React 18](https://img.shields.io/badge/React_18-Vite_SPA_Resilient-61DAFB?style=for-the-badge&logo=react&logoColor=black)](frontend/)
-[![PostgreSQL 18](https://img.shields.io/badge/PostgreSQL_18-Alpine_xmin_ACID-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](docker-compose.yml)
-[![Redis 8](https://img.shields.io/badge/Redis_8-volatile--lfu_Bounded-DC382D?style=for-the-badge&logo=redis&logoColor=white)](docker-compose.yml)
-[![Nginx](https://img.shields.io/badge/Nginx_1.27-Zero--CORS_Proxy-009639?style=for-the-badge&logo=nginx&logoColor=white)](frontend/infra/nginx/default.conf)
-
-> **Guidora** is a high-performance, enterprise-grade developer tool discovery, catalog curation, and community governance platform. Designed as a unified, production-ready monorepo, it orchestrates a clean **.NET 10 Onion Architecture WebAPI** backend and an optimized **React 18 Single-Page Application (SPA)** frontend behind an automated **Zero-CORS Nginx reverse proxy**.
+Guidora is a developer tools discovery, catalog curation, and community governance platform. The project is structured as a production monorepo that orchestrates a .NET 10 Onion Architecture WebAPI backend and a React 18 Single-Page Application (SPA) frontend behind an automated Nginx reverse proxy.
 
 ---
 
-## 🌐 Architectural Overview
+## Architectural Overview
 
-Guidora enforces a strict **Zero-CORS** deployment topology. External browsers and clients communicate exclusively through the Nginx reverse proxy on standard HTTP port 80. Nginx hosts pre-compressed static assets and transparently proxies `/api/*` and `/health/*` routes to the internal container bridge network. The backend WebAPI, PostgreSQL database, and Redis cache remain completely isolated from public exposure.
+Guidora employs a Zero-CORS network topology. Client browsers connect exclusively to the Nginx reverse proxy on standard HTTP port 80. Nginx hosts pre-compressed static application assets and proxies `/api/*` and `/health/*` routes across the internal container bridge network (`guidora-net`). The backend WebAPI, PostgreSQL database, and Redis cache do not expose public host ports in production.
 
 ```text
-[ Browser / Public Client ]
-            │
-            │ HTTP :80 (SPA & /api/*)
-            ▼
-┌────────────────────────────────────────────────────────┐
-│  frontend (Nginx 1.27 Reverse Proxy & Static Host)    │
-│  - /         ──► Static SPA Assets (Brotli / Gzip)     │
-│  - /api/*    ──► proxy_pass http://backend:8080/api/*   │
-│  - /health/* ──► proxy_pass http://backend:8080/health  │
-└────────────────────────────────────────────────────────┘
-            │
-            │ Docker Internal Bridge (`guidora-net`)
-            ▼
-┌────────────────────────────────────────────────────────┐
-│  backend (.NET 10 WebAPI - Clean Onion Architecture)   │
-│  - REST Controllers, Aspect Interception               │
-│  - Unit of Work, FluentValidation, Rate Limiting       │
-└───────────────────────┬────────────────────────────────┘
-                        │
-         ┌──────────────┴──────────────┐
-         ▼                             ▼
-┌──────────────────┐          ┌──────────────────┐
-│  postgres (v18)  │          │   redis (v8)     │
-│  - Single Truth  │          │  - volatile-lfu  │
-│  - citext, xmin  │          │  - Bounded 256MB │
-└──────────────────┘          └──────────────────┘
+[ Client Browser ]
+        |
+        | HTTP :80 (SPA & /api/*)
+        v
++--------------------------------------------------------+
+| frontend (Nginx 1.27 Reverse Proxy & Static Host)      |
+| - /         -> Static SPA Assets (Brotli / Gzip)       |
+| - /api/*    -> proxy_pass http://backend:8080/api/*    |
+| - /health/* -> proxy_pass http://backend:8080/health   |
++--------------------------------------------------------+
+        |
+        | Docker Internal Bridge (guidora-net)
+        v
++--------------------------------------------------------+
+| backend (.NET 10 WebAPI - Clean Onion Architecture)    |
+| - REST Controllers, Aspect Interception                |
+| - Unit of Work, FluentValidation, Rate Limiting        |
++---------------------------+----------------------------+
+                            |
+             +--------------+--------------+
+             |                             |
+             v                             v
++--------------------------+  +--------------------------+
+| postgres (PostgreSQL 18) |  | redis (Redis 8)          |
+| - Single Source of Truth |  | - volatile-lfu Cache     |
+| - citext, xmin locking   |  | - 256MB Hard Bound       |
++--------------------------+  +--------------------------+
 ```
 
 ---
 
-## 🏛️ Monorepo & Submodule Structure
+## Repository Structure
 
-This root repository acts as the **master orchestrator and container boundary** for Guidora. Application source code is decoupled into two independent Git submodules with their own versioning, issue tracking, and test suites:
+The root repository serves as the orchestration and container deployment boundary. Application code is organized into two independent Git submodules with their own revision history and test suites:
 
-- **[`backend/`](backend/)** (`git@github.com:TahsinCr/guidora-backend.git`): .NET 10 Clean Onion Architecture WebAPI.
-- **[`frontend/`](frontend/)** (`git@github.com:TahsinCr/guidora-frontend.git`): React 18 Enterprise SPA with Nginx.
+- `backend/`: .NET 10 WebAPI implementing Onion Architecture (Domain, Application, Infrastructure, Presentation).
+- `frontend/`: React 18 SPA built with Vite, utilizing React Query, accessible UI components, and an automated Nginx production server.
 
 ```text
 guidora/
-├── backend/                  # [Submodule] .NET 10 WebAPI Onion Architecture
-│   ├── Core/                 # Cross-cutting concerns, aspects, pipeline behaviors
-│   ├── Entities/             # Domain entities, DTOs, audit schemas
-│   ├── DataAccess/           # EF Core 10, migrations, PostgreSQL repositories
-│   ├── Business/             # Domain rules, validation, security managers
-│   ├── WebAPI/               # REST API controllers, filters, rate limiters
-│   └── Tests/                # Single unified test suite (270+ tests)
-├── frontend/                 # [Submodule] React 18 Enterprise SPA
-│   ├── src/                  # React components, hooks, services, contexts
+├── backend/                  # Git Submodule (.NET 10 WebAPI)
+│   ├── Core/                 # Aspects, security utilities, cross-cutting concerns
+│   ├── Entities/             # Concrete domain entities and DTOs
+│   ├── DataAccess/           # EF Core context, migrations, repository implementations
+│   ├── Business/             # Domain logic, validation rules, service interfaces
+│   ├── WebAPI/               # HTTP controllers, middleware, rate limiting policies
+│   └── Tests/                # Unified test suite (270+ unit and integration tests)
+├── frontend/                 # Git Submodule (React 18 SPA)
+│   ├── src/                  # React components, custom hooks, API clients, contexts
 │   ├── infra/nginx/          # Hardened Nginx production configuration
-│   ├── infra/mock-server/    # Zero-dependency local mock server & Vite plugin
-│   └── tests/                # Vitest & Happy-DOM test suites (80+ tests)
-├── docker-compose.yml        # Unified production stack orchestration
-├── .env.example              # Comprehensive environment configuration template
-├── start-docker.sh           # Automated production deployment & health verification
-├── stop-docker.sh            # Graceful shutdown & volume cleanup utility
-└── Makefile                  # Standard DevOps & operational shortcuts
+│   ├── infra/mock-server/    # In-process mock API handler for standalone development
+│   └── tests/                # Vitest and Happy-DOM test suite (80+ test cases)
+├── docker-compose.yml        # Production multi-container orchestration definition
+├── .env.example              # Canonical environment template with configuration documentation
+├── start-docker.sh           # Automated deployment and health verification script
+├── stop-docker.sh            # Graceful stack shutdown and cleanup script
+└── Makefile                  # DevOps and developer operational targets
 ```
 
-> **Note**: As an orchestrator repository framing independent submodules, this root repository does not track an application changelog. Versioning and detailed changelogs are maintained directly within each respective submodule repository.
+Note: Because the root repository acts purely as a frame orchestrating independent submodules, it does not maintain an application changelog. Change history and version tags are maintained within each submodule repository.
 
 ---
 
-## 🚀 Key Architectural Highlights
+## Core Technical Invariants
 
-### 1. Robust Zero-CORS Network Isolation
-- External clients never interact directly with database, cache, or raw WebAPI ports.
-- Internal container networking (`guidora-net`) prevents port exposure. Host port bindings (`BACKEND_PORT`, `POSTGRES_PORT`, `REDIS_PORT`) bind to `127.0.0.1` by default for local debugging only.
+### Zero-CORS Network Topology
+External clients interact solely through port 80. Internal communication between Nginx, the WebAPI, PostgreSQL, and Redis occurs across the private Docker bridge network. Infrastructure ports (`5432`, `6379`, `8080`) bind to `127.0.0.1` by default and are intended for local administrative access only.
 
-### 2. High-Concurrency PostgreSQL 18
-- Case-insensitive URL and slug uniqueness enforced via PostgreSQL `citext` extension.
-- Race conditions and lost updates eliminated via optimistic concurrency checks on PostgreSQL's internal `xmin` system column.
-- Append-only `AuditLogs` with native JSONB diff tracking and one-click rollback (`Audit.Revert`).
+### High-Concurrency PostgreSQL 18
+- Case-insensitive uniqueness for URLs and slugs is enforced via the PostgreSQL `citext` extension.
+- Optimistic concurrency control is implemented using PostgreSQL's internal `xmin` system column, preventing lost updates during concurrent mutations.
+- The `AuditLogs` table provides an append-only ledger tracking entity state changes in JSONB format with support for one-click rollbacks (`Audit.Revert`).
 
-### 3. Bounded Distributed Caching (Redis 8)
-- Memory ceiling strictly bounded at `256mb` (`REDIS_MAXMEMORY`) with `volatile-lfu` eviction policy.
-- Cache stampede prevention with pattern-based atomic invalidation.
+### Bounded Distributed Caching
+- Cache memory is strictly capped at `256mb` (`REDIS_MAXMEMORY`) with a `volatile-lfu` (Least Frequently Used) eviction policy.
+- Cache keys use structured prefixes, and invalidations execute atomically to prevent cache stampedes.
 
-### 4. Enterprise Security & Session Governance
-- **In-Memory JWT Access Tokens**: Tokens exist solely in memory (`tokenManager.js`), completely immune to `localStorage` XSS extraction.
-- **HttpOnly Cookies**: Refresh sessions are handled via strict `HttpOnly; SameSite=Lax` cookies.
-- **401 Mutex Queue**: Simultaneous 401 Unauthorized responses trigger exactly one silent refresh request while queuing other requests.
-- **Zero-Template Keys**: Startup validation rejects placeholder or default secrets in production.
-- **Granular Rate Limiting**: Per-endpoint ASP.NET Core rate limiters protect login, registration, email confirmation, comments, votes, and catalog mutations.
+### Security and Session Management
+- Access Tokens are stored solely in memory (`tokenManager.js`), mitigating `localStorage` credential exfiltration risks.
+- Refresh Tokens are transmitted in `HttpOnly; SameSite=Lax` cookies.
+- A 401 Mutex Queue serializes token refresh attempts: when multiple concurrent requests encounter an expired access token, exactly one refresh request is dispatched while pending calls wait for completion.
+- Startup validation rejects empty, placeholder, or default secrets when running in production mode.
+- Fine-grained rate limiters protect authentication, user registration, voting, comments, and catalog submissions.
 
-### 5. Resilient Frontend Architecture
-- **Circuit Breaker**: Trips to `OPEN` after 5 consecutive 5xx errors, preventing cascading overload and fast-failing client requests for 20 seconds.
-- **Ambient Health Awareness**: Real-time status indicators monitor API latency, circuit state, and background recovery.
-- **Concurrent Transitions**: Route changes utilize React 18 `startTransition` to eliminate layout shift and visual hitching.
+### Frontend Resilience
+- Circuit Breaker pattern: Trips to `OPEN` status after 5 consecutive 5xx errors or network timeouts, fast-failing outbound requests for 20 seconds to protect upstream infrastructure.
+- Background health probes monitor `/health/live` to automatically recover and transition the circuit back to `CLOSED`.
+- Route and modal transitions utilize React 18 `startTransition` to eliminate layout shift and unnecessary loading indicators.
 
 ---
 
-## 🛠️ Quickstart: Production Server Deployment
+## Quickstart: Production Deployment
 
 ### Prerequisites
-- **Docker Engine** `24.0.0+`
-- **Docker Compose** `v2.20.0+`
-- (Optional for standalone local development: .NET 10 SDK, Node.js 22 LTS)
+- Docker Engine 24.0.0 or higher
+- Docker Compose v2.20.0 or higher
+- (Optional for local development: .NET 10 SDK, Node.js 22 LTS)
 
-### Step 1: Clone Repository with Submodules
+### 1. Clone Repository with Submodules
 
 ```bash
 git clone --recurse-submodules https://github.com/TahsinCr/guidora.git
 cd guidora
 ```
 
-*If cloned without `--recurse-submodules`, initialize them immediately:*
+If cloned without `--recurse-submodules`, initialize submodules manually:
+
 ```bash
 git submodule update --init --recursive
 ```
 
-### Step 2: Configure Environment Secrets
+### 2. Configure Environment
 
-Copy the provided environment template:
+Copy the configuration template and set permissions:
+
 ```bash
 cp .env.example .env
 chmod 600 .env
 ```
 
-Generate cryptographically secure secrets for production:
+Generate cryptographically secure secrets:
+
 ```bash
-# Generate random 32-character secrets
 sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(openssl rand -hex 16)|" .env
 sed -i "s|^REDIS_PASSWORD=.*|REDIS_PASSWORD=$(openssl rand -hex 16)|" .env
 sed -i "s|^TOKEN_OPTIONS__SECURITYKEY=.*|TOKEN_OPTIONS__SECURITYKEY=$(openssl rand -base64 32)|" .env
 sed -i "s|^COMMUNITY_VERIFICATION_SIGNAL_HASH_KEY=.*|COMMUNITY_VERIFICATION_SIGNAL_HASH_KEY=$(openssl rand -base64 32)|" .env
 ```
 
-### Step 3: Launch the Stack
+### 3. Start the Stack
 
-Start all containers and verify healthy status:
 ```bash
-# Using the production orchestrator script:
+# Using the startup script:
 ./start-docker.sh
 
 # Or using Make:
@@ -157,52 +151,52 @@ make up
 docker compose up -d --build --wait
 ```
 
-### Step 4: Verify Deployment Health
+### 4. Verify System Health
 
 ```bash
-# Verify all containers are healthy
+# Check container status
 docker compose ps
 
-# Check backend readiness probe through Nginx proxy
+# Verify backend readiness probe via Nginx
 curl --fail http://localhost/health/ready
 
-# Check API catalog endpoint
+# Query catalog API
 curl --fail http://localhost/api/products
 ```
 
 ---
 
-## 🌐 Service Matrix & Port Mapping
+## Service Matrix
 
-| Service | Container Image | Internal Port | Host Binding (Default) | Health Check | Purpose |
+| Service | Image / Build Context | Internal Port | Host Binding (Default) | Health Check | Role |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`frontend`** | `nginx:1.27-alpine-slim` | `80` | `0.0.0.0:80` | `GET /healthz` | SPA host & Zero-CORS reverse proxy |
-| **`backend`** | `.NET 10 SDK / Runtime` | `8080` | `127.0.0.1:8080` | `GET /health/ready` | Core Onion-Architecture REST API |
-| **`postgres`** | `postgres:18.6-alpine` | `5432` | `127.0.0.1:5432` | `pg_isready` | ACID persistence with `citext` & `xmin` |
-| **`redis`** | `redis:8.10.1-alpine` | `6379` | `127.0.0.1:6379` | `redis-cli ping` | Distributed cache (`volatile-lfu`) |
-| **`rabbitmq`** | `rabbitmq:4.3.6-alpine` | `5672`, `15672` | `127.0.0.1:5672` | `ping` | Optional broker (`--profile messaging`) |
+| `frontend` | `./frontend/dockerfile` | 80 | `0.0.0.0:80` | `GET /healthz` | Static SPA host and Zero-CORS reverse proxy |
+| `backend` | `./backend/dockerfile` | 8080 | `127.0.0.1:8080` | `GET /health/ready` | Onion Architecture REST API |
+| `postgres` | `postgres:18.6-alpine` | 5432 | `127.0.0.1:5432` | `pg_isready` | ACID persistence with `citext` and `xmin` |
+| `redis` | `redis:8.10.1-alpine` | 6379 | `127.0.0.1:6379` | `redis-cli ping` | Distributed cache with `volatile-lfu` |
+| `rabbitmq` | `rabbitmq:4.3.6-alpine` | 5672, 15672 | `127.0.0.1:5672` | `ping` | Optional broker (`--profile messaging`) |
 
 ---
 
-## 💻 Submodule Development Workflows
+## Development Workflows
 
 ### Standalone Frontend Development
-The frontend can run independently in two distinct modes:
 
 ```bash
 cd frontend
 
-# 1. Zero-dependency development (in-process mock API, no backend required)
+# Zero-dependency development with in-process mock handler
 npm run dev
 
-# 2. Live backend integration (proxies to http://localhost:8080)
+# Integration mode connected to a live backend (http://localhost:8080)
 npm run dev:real
 
-# Run frontend test suite
+# Run test suite
 npm test
 ```
 
 ### Standalone Backend Development
+
 ```bash
 cd backend
 
@@ -213,77 +207,78 @@ dotnet build NetCoreBackend.sln
 dotnet test Tests/Tests.csproj
 ```
 
-### Submodule Synchronization Workflow
-When contributing to submodules:
-1. Make and test changes within the submodule folder (`backend` or `frontend`).
-2. Commit and push changes to the submodule repository first.
-3. In the root repository, stage the updated submodule pointer and commit:
-   ```bash
-   git add backend frontend
-   git commit -m "chore(submodules): update backend and frontend pointers"
-   ```
+### Submodule Synchronization
+
+When making changes to submodules:
+1. Implement and test changes inside the submodule directory (`backend/` or `frontend/`).
+2. Commit and push directly to the submodule repository.
+3. In the root directory, stage and commit the updated submodule commit pointer:
+
+```bash
+git add backend frontend
+git commit -m "chore(submodules): update backend and frontend references"
+```
 
 ---
 
-## ⚙️ Environment Configuration Reference
+## Configuration Reference
 
 | Variable | Default | Required in Production | Description |
 | :--- | :--- | :---: | :--- |
 | `FRONTEND_PORT` | `80` | No | Public HTTP port exposed by Nginx |
 | `BACKEND_PORT` | `8080` | No | Direct backend port (bound to 127.0.0.1) |
-| `INFRA_BIND_ADDRESS` | `127.0.0.1` | No | Binding IP for internal DB/cache ports |
+| `INFRA_BIND_ADDRESS` | `127.0.0.1` | No | Binding IP for internal DB and cache ports |
 | `POSTGRES_DB` | `guidora` | No | PostgreSQL database name |
 | `POSTGRES_USER` | `guidora` | No | PostgreSQL user |
-| `POSTGRES_PASSWORD` | - | **YES** | Strong PostgreSQL password |
-| `REDIS_PASSWORD` | - | **YES** | Strong Redis authentication password |
-| `TOKEN_OPTIONS__SECURITYKEY` | - | **YES** | Cryptographic key for JWT signing (>= 32 chars) |
-| `COMMUNITY_VERIFICATION_SIGNAL_HASH_KEY` | - | **YES** | Cryptographic key for vote hash verification |
-| `BOOTSTRAP_ADMIN_ENABLED` | `false` | No | Enables provisioning of first admin user |
-| `BOOTSTRAP_ADMIN_USERNAME` | - | If enabled | Bootstrap admin username |
-| `BOOTSTRAP_ADMIN_EMAIL` | - | If enabled | Bootstrap admin email address |
-| `BOOTSTRAP_ADMIN_PASSWORD` | - | If enabled | Bootstrap admin password |
-| `RATE_LIMIT_LOGIN_PERMIT_LIMIT` | `10` | No | Max login attempts per window |
-| `RATE_LIMIT_LOGIN_WINDOW_SECONDS` | `60` | No | Login rate limiting window in seconds |
+| `POSTGRES_PASSWORD` | - | **Yes** | Database user password |
+| `REDIS_PASSWORD` | - | **Yes** | Redis authentication password |
+| `TOKEN_OPTIONS__SECURITYKEY` | - | **Yes** | Cryptographic key for signing JWTs (>= 32 chars) |
+| `COMMUNITY_VERIFICATION_SIGNAL_HASH_KEY` | - | **Yes** | Key for community vote integrity verification |
+| `BOOTSTRAP_ADMIN_ENABLED` | `false` | No | Enables provisioning of initial admin account |
+| `BOOTSTRAP_ADMIN_USERNAME` | - | Conditional | Username for initial admin |
+| `BOOTSTRAP_ADMIN_EMAIL` | - | Conditional | Email address for initial admin |
+| `BOOTSTRAP_ADMIN_PASSWORD` | - | Conditional | Password for initial admin |
+| `RATE_LIMIT_LOGIN_PERMIT_LIMIT` | `10` | No | Maximum login attempts per window |
+| `RATE_LIMIT_LOGIN_WINDOW_SECONDS` | `60` | No | Window duration in seconds for login rate limit |
 
 ---
 
-## 📋 Operational Runbook & Maintenance
+## Operations and Maintenance
 
-### Common DevOps Commands
+### Standard Commands
 
 ```bash
 # Start all containers in background
-make up           # or ./start-docker.sh
+make up
 
-# Follow live container logs
-make logs         # or docker compose logs -f
+# Follow container logs
+make logs
 
-# Check container health status
-make ps           # or docker compose ps
+# Inspect container status
+make ps
 
-# Run tests across entire stack
+# Run tests across all submodules
 make test
 
-# Graceful shutdown (retaining database data)
-make down         # or ./stop-docker.sh
+# Stop stack while preserving persistent data
+make down
 
-# Complete purge of containers and database volumes
-make clean        # or ./stop-docker.sh --clean
+# Stop stack and purge database volumes
+make clean
 ```
 
-### Database Backup & Restore
+### Database Backup and Recovery
 
 ```bash
-# Create a timestamped SQL backup:
+# Export timestamped SQL dump
 docker compose exec -T postgres pg_dump -U guidora guidora > "guidora_backup_$(date +%Y%m%d_%H%M%S).sql"
 
-# Restore database from backup:
+# Restore database from SQL dump
 cat guidora_backup_*.sql | docker compose exec -T postgres psql -U guidora guidora
 ```
 
 ---
 
-## 📄 License
+## License
 
-This monorepo orchestrator and its constituent submodules are distributed under the **MIT License**.
-See the respective submodules for additional third-party dependencies and notices.
+This project and its submodules are licensed under the MIT License.
