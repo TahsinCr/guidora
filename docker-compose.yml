@@ -1,6 +1,9 @@
 name: guidora
 
 services:
+  # ========================================================
+  # FRONTEND (Nginx SPA Reverse Proxy)
+  # ========================================================
   frontend:
     build:
       context: ./frontend
@@ -23,17 +26,28 @@ services:
     networks:
       - guidora-net
 
+  # ========================================================
+  # BACKEND (.NET 10 WebAPI - Clean Onion Architecture)
+  # ========================================================
   backend:
     build:
       context: ./backend
       dockerfile: dockerfile
     restart: unless-stopped
     environment:
+      # Runtime & Logging
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      Logging__LogLevel__Default: ${LOG_LEVEL_DEFAULT:-Information}
+      Logging__LogLevel__Microsoft.AspNetCore: ${LOG_LEVEL_ASPNETCORE:-Warning}
+      AllowedHosts: ${ALLOWED_HOSTS:-*}
+
+      # Database & Cache Connections
       ConnectionStrings__Guidora: Host=postgres;Port=5432;Database=${POSTGRES_DB:-guidora};Username=${POSTGRES_USER:-guidora};Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       Redis__Configuration: redis:6379,password=${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
       Database__ApplyMigrationsOnStartup: ${DATABASE_APPLY_MIGRATIONS_ON_STARTUP:-true}
       Authorization__SyncOperationClaimsOnStartup: ${AUTHORIZATION_SYNC_OPERATION_CLAIMS_ON_STARTUP:-true}
+
+      # JWT Security
       TokenOptions__SecurityKey: ${TOKEN_OPTIONS__SECURITYKEY:?TOKEN_OPTIONS__SECURITYKEY must be set in .env}
       TokenOptions__Issuer: ${TOKEN_OPTIONS__ISSUER:-Guidora}
       TokenOptions__Audience: ${TOKEN_OPTIONS__AUDIENCE:-Guidora}
@@ -42,22 +56,57 @@ services:
       TokenOptions__RememberMeExpirationDays: ${TOKEN_OPTIONS__REMEMBER_ME_EXPIRATION_DAYS:-90}
       TokenOptions__SessionAbsoluteExpirationDays: ${TOKEN_OPTIONS__SESSION_ABSOLUTE_EXPIRATION_DAYS:-180}
       TokenOptions__ClockSkewSeconds: ${TOKEN_OPTIONS__CLOCK_SKEW_SECONDS:-30}
+
+      # Community Verification Signals
       CommunityVerification__SignalHashKey: ${COMMUNITY_VERIFICATION_SIGNAL_HASH_KEY:?COMMUNITY_VERIFICATION_SIGNAL_HASH_KEY must be set in .env}
+
+      # Bootstrap Admin Account
       BootstrapAdmin__Enabled: ${BOOTSTRAP_ADMIN_ENABLED:-false}
       BootstrapAdmin__Username: ${BOOTSTRAP_ADMIN_USERNAME:-}
       BootstrapAdmin__Email: ${BOOTSTRAP_ADMIN_EMAIL:-}
       BootstrapAdmin__Password: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+
+      # Email Verification (SMTP)
       EmailVerification__Enabled: ${EMAIL_VERIFICATION_ENABLED:-false}
       EmailVerification__Smtp__Host: ${EMAIL_SMTP_HOST:-}
       EmailVerification__Smtp__Port: ${EMAIL_SMTP_PORT:-587}
       EmailVerification__Smtp__From: ${EMAIL_SMTP_FROM:-}
       EmailVerification__Smtp__Username: ${EMAIL_SMTP_USERNAME:-}
       EmailVerification__Smtp__Password: ${EMAIL_SMTP_PASSWORD:-}
+
+      # Security & Rate Limits
+      RateLimiting__Login__PermitLimit: ${RATE_LIMIT_LOGIN_PERMIT_LIMIT:-10}
+      RateLimiting__Login__WindowSeconds: ${RATE_LIMIT_LOGIN_WINDOW_SECONDS:-60}
+      RateLimiting__Register__PermitLimit: ${RATE_LIMIT_REGISTER_PERMIT_LIMIT:-5}
+      RateLimiting__Register__WindowSeconds: ${RATE_LIMIT_REGISTER_WINDOW_SECONDS:-3600}
+      RateLimiting__Refresh__PermitLimit: ${RATE_LIMIT_REFRESH_PERMIT_LIMIT:-30}
+      RateLimiting__Refresh__WindowSeconds: ${RATE_LIMIT_REFRESH_WINDOW_SECONDS:-60}
+      RateLimiting__EmailVerificationRequest__PermitLimit: ${RATE_LIMIT_EMAIL_REQUEST_PERMIT_LIMIT:-3}
+      RateLimiting__EmailVerificationRequest__WindowSeconds: ${RATE_LIMIT_EMAIL_REQUEST_WINDOW_SECONDS:-3600}
+      RateLimiting__EmailVerificationConfirm__PermitLimit: ${RATE_LIMIT_EMAIL_CONFIRM_PERMIT_LIMIT:-10}
+      RateLimiting__EmailVerificationConfirm__WindowSeconds: ${RATE_LIMIT_EMAIL_CONFIRM_WINDOW_SECONDS:-600}
+      RateLimiting__EmailVerificationIp__PermitLimit: ${RATE_LIMIT_EMAIL_IP_PERMIT_LIMIT:-120}
+      RateLimiting__EmailVerificationIp__WindowSeconds: ${RATE_LIMIT_EMAIL_IP_WINDOW_SECONDS:-3600}
+      RateLimiting__ProductCreate__PermitLimit: ${RATE_LIMIT_PRODUCT_CREATE_PERMIT_LIMIT:-3}
+      RateLimiting__ProductCreate__WindowSeconds: ${RATE_LIMIT_PRODUCT_CREATE_WINDOW_SECONDS:-3600}
+      RateLimiting__ProductUpdate__PermitLimit: ${RATE_LIMIT_PRODUCT_UPDATE_PERMIT_LIMIT:-10}
+      RateLimiting__ProductUpdate__WindowSeconds: ${RATE_LIMIT_PRODUCT_UPDATE_WINDOW_SECONDS:-3600}
+      RateLimiting__CommentCreate__PermitLimit: ${RATE_LIMIT_COMMENT_CREATE_PERMIT_LIMIT:-10}
+      RateLimiting__CommentCreate__WindowSeconds: ${RATE_LIMIT_COMMENT_CREATE_WINDOW_SECONDS:-600}
+      RateLimiting__ProductReportSubmit__PermitLimit: ${RATE_LIMIT_PRODUCT_REPORT_PERMIT_LIMIT:-5}
+      RateLimiting__ProductReportSubmit__WindowSeconds: ${RATE_LIMIT_PRODUCT_REPORT_WINDOW_SECONDS:-3600}
+      RateLimiting__FavoriteMutation__PermitLimit: ${RATE_LIMIT_FAVORITE_MUTATION_PERMIT_LIMIT:-60}
+      RateLimiting__FavoriteMutation__WindowSeconds: ${RATE_LIMIT_FAVORITE_MUTATION_WINDOW_SECONDS:-600}
+      RateLimiting__CommunityVote__PermitLimit: ${RATE_LIMIT_COMMUNITY_VOTE_PERMIT_LIMIT:-30}
+      RateLimiting__CommunityVote__WindowSeconds: ${RATE_LIMIT_COMMUNITY_VOTE_WINDOW_SECONDS:-3600}
+      RateLimiting__ProductContentMutation__PermitLimit: ${RATE_LIMIT_PRODUCT_CONTENT_MUTATION_PERMIT_LIMIT:-6}
+      RateLimiting__ProductContentMutation__WindowSeconds: ${RATE_LIMIT_PRODUCT_CONTENT_MUTATION_WINDOW_SECONDS:-3600}
+      RateLimiting__ProductMetadataMutation__PermitLimit: ${RATE_LIMIT_PRODUCT_METADATA_MUTATION_PERMIT_LIMIT:-30}
+      RateLimiting__ProductMetadataMutation__WindowSeconds: ${RATE_LIMIT_PRODUCT_METADATA_MUTATION_WINDOW_SECONDS:-3600}
+
+      # Reverse Proxy & CORS
       Cors__AllowedOrigins__0: ${WEB_CLIENT_ORIGIN:-http://localhost}
       ForwardedHeaders__KnownProxies__0: ${FORWARDED_HEADERS_KNOWN_PROXIES_0:-}
-      Logging__LogLevel__Default: ${LOG_LEVEL_DEFAULT:-Information}
-      Logging__LogLevel__Microsoft.AspNetCore: ${LOG_LEVEL_ASPNETCORE:-Warning}
-      AllowedHosts: ${ALLOWED_HOSTS:-*}
     ports:
       - "${INFRA_BIND_ADDRESS:-127.0.0.1}:${BACKEND_PORT:-8080}:8080"
     healthcheck:
@@ -74,6 +123,9 @@ services:
     networks:
       - guidora-net
 
+  # ========================================================
+  # DATABASE (PostgreSQL 18.6 Alpine)
+  # ========================================================
   postgres:
     image: postgres:18.6-alpine
     restart: unless-stopped
@@ -93,6 +145,9 @@ services:
     networks:
       - guidora-net
 
+  # ========================================================
+  # DISTRIBUTED CACHE (Redis 8.10.1 Alpine - volatile-lfu)
+  # ========================================================
   redis:
     image: redis:8.10.1-alpine3.23
     restart: unless-stopped
@@ -117,6 +172,9 @@ services:
     networks:
       - guidora-net
 
+  # ========================================================
+  # MESSAGE BROKER (Optional: RabbitMQ 4.3.6 Management)
+  # ========================================================
   rabbitmq:
     profiles: ["messaging"]
     image: rabbitmq:4.3.6-management-alpine
